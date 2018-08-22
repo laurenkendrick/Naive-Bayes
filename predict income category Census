@@ -1,0 +1,162 @@
+#Lauren Kendrick
+#August 21, 2018
+#Problem: Classify the income bracket of each Census entry as greater or less than $50,000
+
+import csv
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.naive_bayes import BernoulliNB
+#Or multinomial naive bayes?
+import matplotlib.pyplot as plt
+
+#Get data
+#Download from http://archive.ics.uci.edu/ml/machine-learning-databases/census-income-mld/
+#More about this database: http://archive.ics.uci.edu/ml/machine-learning-databases/census-income-mld/census-income.data.html
+censusdata=pd.read_csv('censusdata.csv')
+censusdata.dtypes
+
+#check for missing values
+censusdata.isnull().sum()  #0
+objects=['worker_class', 'education', 'enrolled_edu', 'marital_status',
+       'major_industry', 'major_occupation', 'race', 'hispanic_origin', 'sex',
+       'union_member', 'reason_unemployed', 'full_or_part_time_work',
+       'tax_filer_status', 'previous_region', 'previous_state',
+       'detailed_household', 'summary_household', 'change_msa', 'change_reg',
+       'change_within_reg', 'lived_here_over_1_year', 'previous_sunbelt',
+       'live_with_parents', 'father_origin', 'mother_origin', 'self_origin',
+       'citizenship', 'unknown2', 'income']
+for object in objects:
+    print(censusdata[object].value_counts())
+#Missing appear to be labeled "Not in universe" or "?" 
+#We may remove rows containing "?"
+#Columns previous_sunbelt, change_within_reg,  have more than 100,000 "?", so we will exclude these columns from the dataset
+censusdatatrim=censusdata.drop(['change_within_reg'],axis=1)
+censusdatatrim=censusdatatrim.drop(['previous_sunbelt'],axis=1)
+censusdatatrim=censusdatatrim.drop(['summary_household'],axis=1)
+
+#Explore data
+#We want to identify important variables and remove variables that don't give info about income
+for object in objects:
+    print(pd.crosstab(censusdata['income'],censusdata[object],normalize='index'))
+#stocks, native citizen, self_origin US, father origin US, father origin mexico, live with mother only, live with both parents, detailed household spouse of householder, detailed household householder, detailed_household child <18 never marr not in subfamily, taxfiler status nonfiler, taxfiler status joint both under 65, full or part time not in labor force, full or part time full time schedules, full or part time children or armed forces, union member, sex, hispanic origin all other, race white, race black, major occupation sales/professional specialty/executive admin, major industry manufacturing durable goods, marital status never married, married-civilian spouse present, education masters degree, education high school grad, education children, education bachelors degree, worker class private, weeks worked, unknown3, unknown1, num_employees, occupation, industry, age 
+#The above all differ in distribution across income near the 10% level
+#May want to drop the others
+#May want to convert remaining continuous variables to binary, then use BernoulliNB
+
+##Recode text data into numeric or binary categories
+for object in objects:
+    censusdatatrim[object]=censusdatatrim[object].astype('category')
+    censusdatatrim=pd.get_dummies(censusdatatrim, columns=[object])
+
+universecolumns=[col for col in censusdatatrim.columns if 'universe' in col]
+for obj in universecolumns:
+    censusdatatrim=censusdatatrim.drop([obj],axis=1)    
+censusdatatrim=censusdatatrim.drop(['income_-50000'],axis=1)
+
+
+#Histograms to look for shape of distribution
+#plot income against integer and float variables
+bin_values=np.arange(start=0, stop=95,step=5)
+names=['>50k','<50k']
+plt.legend()
+plt.hist([censusdatatrim['age'].where(censusdatatrim['income_ 50000+.']==1),censusdatatrim['age'].where(censusdatatrim['income_ 50000+.']==0)],bins=bin_values,stacked=True,density=True,label=names)
+plt.xlabel('Age')
+plt.title('Histogram of Age versus Income')
+plt.show()
+#High income likeliest around age 45-50
+#Encode age into binary
+censusdatatrim['age36-55']=np.where((censusdatatrim['age']>35) & (censusdatatrim['age']<56),1,0)
+censusdatatrim=censusdatatrim.drop(['age'],axis=1)
+#
+bin_values=np.arange(start=0, stop=53,step=1)
+names=['>50k','<50k']
+plt.hist([censusdatatrim['weeks_worked'].where(censusdatatrim['income_ 50000+.']==1),censusdatatrim['weeks_worked'].where(censusdatatrim['income_ 50000+.']==0)],bins=bin_values,stacked=True,density=True,label=names)
+plt.xlabel('Weeks worked')
+plt.title('Histogram of Weeks Worked versus Income')
+plt.show()
+#
+bin_values=np.arange(start=0, stop=52,step=1)
+plt.legend()
+plt.hist([censusdatatrim['industry'].where(censusdatatrim['income_ 50000+.']==1),censusdatatrim['industry'].where(censusdatatrim['income_ 50000+.']==0)],bins=bin_values,stacked=True,density=True,label=names)
+plt.xlabel('Industry')
+plt.title('Histogram of Industry versus Income')
+plt.show()
+#
+#
+bin_values=np.arange(start=0, stop=47,step=1)
+plt.legend()
+plt.hist([censusdatatrim['occupation'].where(censusdatatrim['income_ 50000+.']==1),censusdatatrim['occupation'].where(censusdatatrim['income_ 50000+.']==0)],bins=bin_values,stacked=True,density=True,label=names)
+plt.xlabel('Occupation')
+plt.title('Histogram of Occupation versus Income')
+plt.show()
+#High income likelier for occupation=2
+bin_values=np.arange(start=0, stop=1000,step=10)
+plt.hist([censusdatatrim['unknown0'].where(censusdatatrim['income_ 50000+.']==1),censusdatatrim['unknown0'].where(censusdatatrim['income_ 50000+.']==0)],bins=bin_values,stacked=True,density=False,label=names)
+plt.xlabel('unknown0')
+plt.title('Histogram of unknown0 versus Income')
+plt.show()
+#Seems useless, we'll remove unknown0 from the dataset, along with cap gains and losses
+censusdatatrim=censusdatatrim.drop(['unknown0'],axis=1)
+censusdatatrim=censusdatatrim.drop(['cap_gains'],axis=1)
+censusdatatrim=censusdatatrim.drop(['cap_losses'],axis=1)
+#
+bin_values=np.arange(start=1, stop=10000,step=100)
+plt.hist([censusdatatrim['stock_dividends'].where(censusdatatrim['income_ 50000+.']==1),censusdatatrim['stock_dividends'].where(censusdatatrim['income_ 50000+.']==0)],bins=bin_values,stacked=True,density=True,label=names)
+plt.xlabel('stock dividends')
+plt.title('Histogram of stock dividends versus Income')
+plt.show()
+#Convert stock_dividends to a binary if =0 or >0
+censusdatatrim['stocks']=np.where(censusdatatrim['stock_dividends']>0,1,0)
+censusdatatrim=censusdatatrim.drop(['stock_dividends'],axis=1)
+#
+bin_values=np.arange(start=0, stop=10,step=1)
+plt.hist([censusdatatrim['unknown1'].where(censusdatatrim['income_ 50000+.']==1),censusdatatrim['unknown1'].where(censusdatatrim['income_ 50000+.']==0)],bins=bin_values,stacked=True,density=True,label=names)
+plt.xlabel('unknown1')
+plt.show()
+#
+bin_values=np.arange(start=0, stop=10,step=1)
+plt.hist([censusdatatrim['unknown3'].where(censusdatatrim['income_ 50000+.']==1),censusdatatrim['unknown3'].where(censusdatatrim['income_ 50000+.']==0)],bins=bin_values,stacked=True,density=True,label=names)
+plt.xlabel('unknown3')
+plt.show()
+#
+bin_values=np.arange(start=93, stop=96,step=1)
+plt.hist([censusdatatrim['unknown4'].where(censusdatatrim['income_ 50000+.']==1),censusdatatrim['unknown4'].where(censusdatatrim['income_ 50000+.']==0)],bins=bin_values,stacked=True,density=True,label=names)
+plt.xlabel('unknown4')
+plt.show()
+#Drop unknown4 because there is no difference across values
+censusdatatrim=censusdatatrim.drop(['unknown4'],axis=1)
+censusdatatrim=censusdatatrim.drop(['instance_weight'],axis=1)
+
+censusdatatrim['education_ Bachelors degree+']=np.where((censusdatatrim['education_ Masters degree(MA MS MEng MEd MSW MBA)']+censusdatatrim['education_ Prof school degree (MD DDS DVM LLB JD)']+censusdatatrim['education_ Doctorate degree(PhD EdD)']+censusdatatrim['education_ Bachelors degree(BA AB BS)'])>0,1,0)
+censusdatatrim['weeks_worked_52']=np.where(censusdatatrim['weeks_worked']>51,1,0)
+censusdatatrim['unknown3_2']=np.where(censusdatatrim['unknown3']>1,1,0)
+censusdatatrim['unknown1_0']=np.where(censusdatatrim['unknown1']<1,1,0)
+censusdatatrim['num_employees 6+']=np.where(censusdatatrim['num_employees']>5,1,0)
+censusdatatrim['occupation2']=np.where(censusdatatrim['occupation']==2,1,0)
+censusdatatrim['industry0']=np.where(censusdatatrim['industry']<1,1,0)
+
+#Keep the variables that we found earlier had a different distribution for more and less than $50,000 income
+censusdatabinary=censusdatatrim[['stocks','income_ 50000+.','citizenship_ Native- Born in the United States','father_origin_ United-States','father_origin_ Mexico','live_with_parents_ Both parents present','detailed_household_ Householder','detailed_household_ Child <18 never marr not in subfamily','tax_filer_status_ Nonfiler','tax_filer_status_ Joint both under 65','full_or_part_time_work_ Full-time schedules','full_or_part_time_work_ Children or Armed Forces','union_member_ No','sex_ Female','hispanic_origin_ All other','race_ White', 'major_occupation_ Professional specialty','major_occupation_ Executive admin and managerial','major_industry_ Manufacturing-durable goods','marital_status_ Never married','marital_status_ Married-civilian spouse present','education_ Bachelors degree+','worker_class_ Private','weeks_worked_52','unknown3_2','unknown1_0','num_employees 6+','occupation2','industry0','age36-55']]
+#Some of these binary variables are still not independent, but we naively assume they are independent of each other for the NB model.
+
+#Split data into training and testing data
+df=censusdatabinary.drop(['income_ 50000+.'],axis=1)
+target=censusdatabinary['income_ 50000+.']
+df_train,df_test,target_train,target_test=train_test_split(df,target,test_size=0.2,random_state=2)
+
+#Try naive Bayes classification
+bnb = BernoulliNB()
+bnb.fit(df_train,target_train)
+
+income_pred=bnb.predict(df_train)
+print("Number of mislabeled points out of a total %d points : %d"
+       % (df_train.shape[0],(target_train != income_pred).sum()))
+#Sample error rate 19.0%
+
+income_pred_test=bnb.predict(df_test)
+print("Number of mislabeled points out of a total %d points : %d"
+       % (df_test.shape[0],(target_test != income_pred_test).sum()))
+#Sample error rate 19.3%
+
+
